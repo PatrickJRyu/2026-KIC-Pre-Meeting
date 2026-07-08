@@ -184,7 +184,7 @@
   }
 
   /* Grid */
-  .grid-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:560px;}
+  .grid-scroll{overflow-x:auto;overflow-y:visible;border:1px solid var(--line);border-radius:12px;}
   .grid{display:grid;user-select:none;}
   .g-corner, .g-datehead, .g-hour, .g-cell{
     border-right:1px solid var(--line);
@@ -502,7 +502,7 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var BUILD_ID = '2026-07-08-v4';
+  var BUILD_ID = '2026-07-08-v5';
 
   // ---------------- i18n ----------------
   var TEXT = {
@@ -1162,7 +1162,9 @@
       updateSelCount();
       return;
     }
-    var cols = 'minmax(84px,120px) ' + activeDates.map(function(){return 'minmax(78px,1fr)';}).join(' ');
+    var hourColW = showLocal ? 'minmax(84px,120px)' : 'minmax(60px,84px)';
+    var dateColW = showLocal ? 'minmax(78px,1fr)' : 'minmax(50px,1fr)';
+    var cols = hourColW + ' ' + activeDates.map(function(){return dateColW;}).join(' ');
     var html = '<div class="grid-scroll"><div class="grid" style="grid-template-columns:'+cols+';">';
     html += '<div class="g-corner"></div>';
     activeDates.forEach(function(iso){
@@ -1321,7 +1323,9 @@
     Object.keys(counts).forEach(function(k){ if(counts[k]>maxCount) maxCount=counts[k]; });
     document.getElementById('heatmapSummary').textContent = t('respondentsPrefix')+': '+responses.length;
 
-    var cols = 'minmax(84px,120px) ' + activeDates.map(function(){return 'minmax(78px,1fr)';}).join(' ');
+    var hourColW = showLocal ? 'minmax(84px,120px)' : 'minmax(60px,84px)';
+    var dateColW = showLocal ? 'minmax(78px,1fr)' : 'minmax(50px,1fr)';
+    var cols = hourColW + ' ' + activeDates.map(function(){return dateColW;}).join(' ');
     var html = '<div class="grid-scroll"><div class="grid" style="grid-template-columns:'+cols+';">';
     html += '<div class="g-corner"></div>';
     activeDates.forEach(function(iso){
