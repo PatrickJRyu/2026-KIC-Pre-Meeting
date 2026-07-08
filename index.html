@@ -178,6 +178,10 @@
   }
   .tz-banner label{display:flex;align-items:center;gap:6px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .tz-banner input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#8A5A00;}
+  .tz-banner select{
+    font-family:inherit;font-size:12.5px;font-weight:700;color:#8A5A00;
+    border:1.5px solid #F4DFB8;border-radius:8px;padding:5px 8px;background:#fff;cursor:pointer;
+  }
 
   /* Grid */
   .grid-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:560px;}
@@ -202,6 +206,7 @@
     line-height:1.35;
   }
   .g-datehead .wd{font-size:12px;color:var(--muted);font-weight:600;}
+  .g-datehead .wd-local{font-size:10.5px;color:var(--coral);font-weight:600;margin-top:1px;}
   .g-hour{
     position:sticky;left:0;z-index:1;
     background:var(--card);
@@ -392,6 +397,7 @@
           <div class="btn-row" style="margin-top:16px;">
             <button class="btn btn-primary" id="submitBtn"></button>
             <button class="btn btn-ghost" id="clearSelBtn"></button>
+            <button class="btn btn-ghost" id="loadMyResponseBtn"></button>
           </div>
         </div>
       </div>
@@ -471,6 +477,7 @@
     <h4 id="modalTitle"></h4>
     <p id="modalDesc"></p>
     <input type="text" id="nameInput" maxlength="60">
+    <input type="text" id="affiliationInput" maxlength="80">
     <div class="btn-row">
       <button class="btn btn-primary" id="modalConfirmBtn" style="flex:1;"></button>
       <button class="btn btn-ghost" id="modalCancelBtn"></button>
@@ -529,6 +536,11 @@
       modalTitle:"이름을 입력해주세요",
       modalDesc:"{n}개의 시간을 선택하셨어요. 제출 전 이름만 입력하면 완료됩니다.",
       namePlaceholder:"예: 홍길동 (OO대학교)",
+      affiliationPlaceholder:"소속 (선택사항, 예: OO대학교)",
+      loadMyResponseBtn:"이전에 제출한 응답 불러오기",
+      promptLoadName:"불러올 때 사용했던 이름을 입력해주세요",
+      toastNoPreviousResponse:"해당 이름으로 등록된 응답을 찾을 수 없어요.",
+      toastLoadedPrevious:"{name}님의 이전 응답을 불러왔어요. 시간을 수정한 후 다시 제출해주세요.",
       modalConfirm:"제출 완료",
       modalCancel:"취소",
       toastSelectFirst:"먼저 가능한 시간을 선택해주세요.",
@@ -560,6 +572,8 @@
       participantLinkLabel:"발표자/좌장용 링크 (관리 기능 없음)",
       adminLinkLabel:"관리자용 링크 (날짜 설정 · 응답 삭제 포함)",
       localViewToggleLabel:"내 시간대로 보기",
+      tzSelectLabel:"시간대:",
+      autoDetectOption:"자동 감지 ({tz})",
       renameHeading:"세션 이름 수정",
       renameSaveBtn:"이름 저장",
       adminDateHeading:"후보 날짜 설정",
@@ -608,6 +622,11 @@
       modalTitle:"Please enter your name",
       modalDesc:"You've selected {n} time slot(s). Just enter your name to finish.",
       namePlaceholder:"e.g. Jane Doe (University of ABC)",
+      affiliationPlaceholder:"Affiliation (optional, e.g. University of ABC)",
+      loadMyResponseBtn:"Load my previous response",
+      promptLoadName:"Enter the name you used before",
+      toastNoPreviousResponse:"No response found under that name.",
+      toastLoadedPrevious:"Loaded {name}'s previous response. Adjust your times and submit again.",
       modalConfirm:"Submit",
       modalCancel:"Cancel",
       toastSelectFirst:"Please select your available times first.",
@@ -639,6 +658,8 @@
       participantLinkLabel:"Speaker/Chair Link (no admin access)",
       adminLinkLabel:"Admin Link (includes date settings & reset)",
       localViewToggleLabel:"View in my time zone",
+      tzSelectLabel:"Time zone:",
+      autoDetectOption:"Auto-detect ({tz})",
       renameHeading:"Edit Session Name",
       renameSaveBtn:"Save Name",
       adminDateHeading:"Set Candidate Dates",
@@ -759,8 +780,10 @@
     document.getElementById('clearSelBtn').textContent = t('clearSelBtn');
     document.getElementById('modalTitle').textContent = t('modalTitle');
     document.getElementById('nameInput').placeholder = t('namePlaceholder');
+    document.getElementById('affiliationInput').placeholder = t('affiliationPlaceholder');
     document.getElementById('modalConfirmBtn').textContent = t('modalConfirm');
     document.getElementById('modalCancelBtn').textContent = t('modalCancel');
+    document.getElementById('loadMyResponseBtn').textContent = t('loadMyResponseBtn');
     document.getElementById('heatHeading').textContent = t('heatHeading');
     document.getElementById('heatDesc').textContent = t('heatDesc');
     document.getElementById('legend0').textContent = t('legend0');
@@ -801,9 +824,39 @@
   });
 
   // ---------------- Timezone helpers ----------------
-  var userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
-  var showLocal = true;
-  var localViewOn = false;
+  var browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
+  var userTz = browserTz;
+  var manualTzOverride = false;
+  var showLocal = (lang === 'en');
+  var localViewOn = (lang === 'en');
+  var TZ_OPTIONS = [
+    {v:'America/Los_Angeles', l:'Los Angeles (PT)'},
+    {v:'America/Denver', l:'Denver (MT)'},
+    {v:'America/Chicago', l:'Chicago (CT)'},
+    {v:'America/New_York', l:'New York (ET)'},
+    {v:'America/Sao_Paulo', l:'Sao Paulo'},
+    {v:'Europe/London', l:'London'},
+    {v:'Europe/Paris', l:'Paris / Berlin (CET)'},
+    {v:'Africa/Cairo', l:'Cairo'},
+    {v:'Asia/Dubai', l:'Dubai'},
+    {v:'Asia/Kolkata', l:'India (IST)'},
+    {v:'Asia/Bangkok', l:'Bangkok / Jakarta'},
+    {v:'Asia/Singapore', l:'Singapore / Kuala Lumpur'},
+    {v:'Asia/Shanghai', l:'Beijing / Shanghai'},
+    {v:'Asia/Tokyo', l:'Tokyo'},
+    {v:'Asia/Seoul', l:'Seoul (KST)'},
+    {v:'Australia/Sydney', l:'Sydney'},
+    {v:'Pacific/Auckland', l:'Auckland'}
+  ];
+  function friendlyTz(tz){
+    try{
+      var parts = tz.split('/');
+      var city = parts[parts.length-1].replace(/_/g,' ');
+      var partsInfo = new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(new Date());
+      var abbr = partsInfo.find(function(p){ return p.type==='timeZoneName'; });
+      return city + (abbr ? ' ('+abbr.value+')' : '');
+    }catch(e){ return tz; }
+  }
   function localLabelForHour(hour, refDateISO){
     try{
       var ref = refDateISO || toISO(new Date());
@@ -817,6 +870,14 @@
       return timeStr+diffLabel;
     }catch(e){ return ''; }
   }
+  function localDateForColumn(iso){
+    try{
+      var startD = new Date(iso+'T08:00:00+09:00').toLocaleDateString('en-CA',{timeZone:userTz});
+      var endD = new Date(iso+'T21:00:00+09:00').toLocaleDateString('en-CA',{timeZone:userTz});
+      var fmt = function(dstr){ var d=parseISO(dstr); return (d.getMonth()+1)+'/'+d.getDate(); };
+      return (startD===endD) ? fmt(startD) : (fmt(startD)+'\u2013'+fmt(endD));
+    }catch(e){ return ''; }
+  }
   function hourLabels(hour, refDateISO){
     var kst = pad(hour)+':00';
     if(!showLocal){ return {primary:kst, secondary:''}; }
@@ -827,8 +888,22 @@
   function renderTzBanner(container){
     if(!showLocal){ container.innerHTML=''; return; }
     var cid = container.id+'_ck';
-    container.innerHTML = '<div class="tz-banner"><span>'+t('tzBanner',{tz:userTz})+'</span>'+
+    var sid = container.id+'_sel';
+    var optsHtml = '<option value="auto"'+(!manualTzOverride?' selected':'')+'>'+t('autoDetectOption',{tz:friendlyTz(browserTz)})+'</option>';
+    TZ_OPTIONS.forEach(function(o){
+      optsHtml += '<option value="'+o.v+'"'+(manualTzOverride && userTz===o.v ? ' selected':'')+'>'+o.l+'</option>';
+    });
+    container.innerHTML = '<div class="tz-banner"><span>'+t('tzBanner',{tz:friendlyTz(userTz)})+'</span>'+
+      '<label>'+t('tzSelectLabel')+' <select id="'+sid+'">'+optsHtml+'</select></label>'+
       '<label><input type="checkbox" id="'+cid+'" '+(localViewOn?'checked':'')+'>'+t('localViewToggleLabel')+'</label></div>';
+    document.getElementById(sid).addEventListener('change', function(e){
+      if(e.target.value==='auto'){ manualTzOverride=false; userTz=browserTz; }
+      else { manualTzOverride=true; userTz=e.target.value; }
+      renderTzBanner(document.getElementById('tzBannerSchedule'));
+      renderTzBanner(document.getElementById('tzBannerHeatmap'));
+      renderScheduleGrid();
+      refreshHeatmap();
+    });
     document.getElementById(cid).addEventListener('change', function(e){
       localViewOn = e.target.checked;
       renderTzBanner(document.getElementById('tzBannerSchedule'));
@@ -978,6 +1053,8 @@
   var isSelecting = false;
   var selectMode = true;
   var currentSessionMeta = null;
+  var pendingEditName = '';
+  var pendingEditAffiliation = '';
 
   function keyOf(dateISO, hour){ return dateISO+'_'+pad(hour); }
 
@@ -1085,7 +1162,7 @@
     html += '<div class="g-corner"></div>';
     activeDates.forEach(function(iso){
       var d = parseISO(iso);
-      html += '<div class="g-datehead">'+(d.getMonth()+1)+'/'+d.getDate()+'<div class="wd">'+WD[d.getDay()]+'</div></div>';
+      html += '<div class="g-datehead">'+(d.getMonth()+1)+'/'+d.getDate()+'<div class="wd">'+WD[d.getDay()]+'</div>'+(showLocal?'<div class="wd-local">'+localDateForColumn(iso)+'</div>':'')+'</div>';
     });
     HOURS.forEach(function(hh){
       var hl = hourLabels(hh, activeDates[0]);
@@ -1147,9 +1224,33 @@
   document.getElementById('submitBtn').addEventListener('click', function(){
     if(selection.size===0){ showToast(t('toastSelectFirst')); return; }
     document.getElementById('modalDesc').textContent = t('modalDesc',{n:selection.size});
-    document.getElementById('nameInput').value = '';
+    document.getElementById('nameInput').value = pendingEditName;
+    document.getElementById('affiliationInput').value = pendingEditAffiliation;
     nameModal.classList.add('show');
     setTimeout(function(){ document.getElementById('nameInput').focus(); }, 50);
+  });
+  document.getElementById('loadMyResponseBtn').addEventListener('click', async function(){
+    var name = window.prompt(t('promptLoadName'));
+    if(name===null) return;
+    name = name.trim();
+    if(!name) return;
+    var btn = this; btn.disabled = true;
+    try{
+      var doc = await responsesCol(sessionId).doc(encodeURIComponent(name)).get();
+      if(!doc.exists){
+        showToast(t('toastNoPreviousResponse'));
+      } else {
+        var data = doc.data();
+        selection = new Set(data.slots||[]);
+        pendingEditName = data.name || name;
+        pendingEditAffiliation = data.affiliation || '';
+        renderScheduleGrid();
+        showToast(t('toastLoadedPrevious',{name:pendingEditName}));
+      }
+    }catch(e){
+      showToast(t('toastLoadFail'));
+    }
+    btn.disabled = false;
   });
   document.getElementById('modalCancelBtn').addEventListener('click', function(){ nameModal.classList.remove('show'); });
   document.getElementById('nameInput').addEventListener('keydown', function(e){
@@ -1157,6 +1258,7 @@
   });
   document.getElementById('modalConfirmBtn').addEventListener('click', async function(){
     var name = document.getElementById('nameInput').value.trim();
+    var affiliation = document.getElementById('affiliationInput').value.trim();
     if(!name){ showToast(t('toastNeedName')); return; }
     var btn = this;
     btn.disabled = true;
@@ -1166,10 +1268,11 @@
         var proceed = confirm(t('toastOverwriteConfirm',{name:name}));
         if(!proceed){ btn.disabled=false; return; }
       }
-      await res.ref.set({name:name, slots:Array.from(selection), submittedAt:new Date().toISOString()});
+      await res.ref.set({name:name, affiliation:affiliation, slots:Array.from(selection), submittedAt:new Date().toISOString()});
       nameModal.classList.remove('show');
       showToast(t('toastSubmitSuccess',{name:name}));
       selection.clear();
+      pendingEditName = ''; pendingEditAffiliation = '';
       renderScheduleGrid();
     }catch(e){
       showToast(t('toastSubmitFail'));
@@ -1202,10 +1305,11 @@
 
     var counts = {}; var namesBySlot = {};
     responses.forEach(function(r){
+      var label = r.affiliation ? (r.name+' ('+r.affiliation+')') : r.name;
       (r.slots||[]).forEach(function(k){
         counts[k] = (counts[k]||0)+1;
         if(!namesBySlot[k]) namesBySlot[k]=[];
-        namesBySlot[k].push(r.name);
+        namesBySlot[k].push(label);
       });
     });
     var maxCount = 0;
@@ -1217,7 +1321,7 @@
     html += '<div class="g-corner"></div>';
     activeDates.forEach(function(iso){
       var d = parseISO(iso);
-      html += '<div class="g-datehead">'+(d.getMonth()+1)+'/'+d.getDate()+'<div class="wd">'+WD[d.getDay()]+'</div></div>';
+      html += '<div class="g-datehead">'+(d.getMonth()+1)+'/'+d.getDate()+'<div class="wd">'+WD[d.getDay()]+'</div>'+(showLocal?'<div class="wd-local">'+localDateForColumn(iso)+'</div>':'')+'</div>';
     });
     HOURS.forEach(function(hh){
       var hl = hourLabels(hh, activeDates[0]);
@@ -1248,7 +1352,8 @@
     }
     document.getElementById('topSlots').innerHTML = topHtml;
     document.getElementById('respondentList').innerHTML = responses.map(function(r){
-      return '<span class="name-chip">'+escapeHtml(r.name)+' &middot; '+(r.slots?r.slots.length:0)+'</span>';
+      var label = r.affiliation ? (r.name+' ('+r.affiliation+')') : r.name;
+      return '<span class="name-chip">'+escapeHtml(label)+' &middot; '+(r.slots?r.slots.length:0)+'</span>';
     }).join('');
   }
 
