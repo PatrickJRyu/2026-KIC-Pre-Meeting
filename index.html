@@ -515,7 +515,7 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var BUILD_ID = '2026-07-08-v8';
+  var BUILD_ID = '2026-07-08-v9';
 
   // ---------------- i18n ----------------
   var TEXT = {
@@ -984,11 +984,22 @@
   function responseKey(name, affiliation){
     return encodeURIComponent((name||'').trim()+'||'+(affiliation||'').trim());
   }
+  async function queryByName(id, name){
+    var snap = await responsesCol(id).where('name','==',name).get();
+    return snap.docs;
+  }
   async function submitResponseDoc(id, name, affiliation, slots){
-    var docId = responseKey(name, affiliation);
-    var ref = responsesCol(id).doc(docId);
-    var existing = await ref.get();
-    return {ref:ref, exists:existing.exists};
+    var docs = await queryByName(id, name);
+    var target = null;
+    if(docs.length === 1){
+      target = docs[0];
+    } else if(docs.length > 1){
+      var normAff = (affiliation||'').trim();
+      var exact = docs.filter(function(d){ return ((d.data().affiliation)||'').trim() === normAff; });
+      if(exact.length >= 1){ target = exact[0]; }
+    }
+    if(target){ return {ref: target.ref, exists:true}; }
+    return {ref: responsesCol(id).doc(responseKey(name, affiliation)), exists:false};
   }
   async function deleteAllResponsesDocs(id){
     var snap = await responsesCol(id).get();
@@ -1278,19 +1289,19 @@
     if(!name){ showToast(t('toastNeedName')); return; }
     var btn = this; btn.disabled = true;
     try{
+      var docs = await queryByName(sessionId, name);
       var data = null;
-      if(affiliation){
-        var doc = await responsesCol(sessionId).doc(responseKey(name, affiliation)).get();
-        if(doc.exists) data = doc.data();
-      } else {
-        var snap = await responsesCol(sessionId).where('name','==',name).get();
-        if(snap.size === 1){
-          data = snap.docs[0].data();
-        } else if(snap.size > 1){
+      if(docs.length === 1){
+        data = docs[0].data();
+      } else if(docs.length > 1){
+        if(!affiliation){
           showToast(t('toastMultipleMatches'));
           btn.disabled = false;
           return;
         }
+        var exact = docs.filter(function(d){ return ((d.data().affiliation)||'').trim() === affiliation; });
+        exact.sort(function(a,b){ return (b.data().submittedAt||'').localeCompare(a.data().submittedAt||''); });
+        if(exact.length){ data = exact[0].data(); }
       }
       if(!data){
         showToast(t('toastNoPreviousResponse'));
