@@ -515,7 +515,7 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var BUILD_ID = '2026-07-08-v7';
+  var BUILD_ID = '2026-07-08-v8';
 
   // ---------------- i18n ----------------
   var TEXT = {
@@ -553,9 +553,10 @@
       affiliationPlaceholder:"소속 (선택사항, 예: OO대학교)",
       loadMyResponseBtn:"이전에 제출한 응답 불러오기",
       loadModalTitle:"이전 응답 불러오기",
-      loadModalDesc:"제출하실 때 사용했던 이름과 소속을 그대로 입력해주세요. (동명이인 구분을 위해 소속까지 정확히 입력해주셔야 해요)",
+      loadModalDesc:"제출하실 때 사용했던 이름을 입력해주세요. 소속을 입력하셨다면 그것도 같이 입력해주세요 (동명이인이 있을 경우 소속으로 구분해요). 소속 없이 제출하셨다면 비워두셔도 됩니다.",
       loadModalConfirm:"불러오기",
-      toastNoPreviousResponse:"해당 이름/소속으로 등록된 응답을 찾을 수 없어요.",
+      toastNoPreviousResponse:"해당 정보로 등록된 응답을 찾을 수 없어요.",
+      toastMultipleMatches:"같은 이름으로 등록된 응답이 여러 개 있어요. 소속을 입력해서 다시 찾아주세요.",
       toastLoadedPrevious:"{name}님의 이전 응답을 불러왔어요. 시간을 수정한 후 다시 제출해주세요.",
       modalConfirm:"제출 완료",
       modalCancel:"취소",
@@ -642,9 +643,10 @@
       affiliationPlaceholder:"Affiliation (optional, e.g. University of ABC)",
       loadMyResponseBtn:"Load my previous response",
       loadModalTitle:"Load Previous Response",
-      loadModalDesc:"Enter the exact name and affiliation you used when you submitted. (Affiliation helps tell apart people with the same name.)",
+      loadModalDesc:"Enter the name you used when you submitted. If you also entered an affiliation, add that too (it helps tell apart people with the same name). If you submitted without an affiliation, just leave it blank.",
       loadModalConfirm:"Load",
-      toastNoPreviousResponse:"No response found under that name/affiliation.",
+      toastNoPreviousResponse:"No response found with that information.",
+      toastMultipleMatches:"Multiple responses found under that name. Please also enter your affiliation to narrow it down.",
       toastLoadedPrevious:"Loaded {name}'s previous response. Adjust your times and submit again.",
       modalConfirm:"Submit",
       modalCancel:"Cancel",
@@ -1276,11 +1278,23 @@
     if(!name){ showToast(t('toastNeedName')); return; }
     var btn = this; btn.disabled = true;
     try{
-      var doc = await responsesCol(sessionId).doc(responseKey(name, affiliation)).get();
-      if(!doc.exists){
+      var data = null;
+      if(affiliation){
+        var doc = await responsesCol(sessionId).doc(responseKey(name, affiliation)).get();
+        if(doc.exists) data = doc.data();
+      } else {
+        var snap = await responsesCol(sessionId).where('name','==',name).get();
+        if(snap.size === 1){
+          data = snap.docs[0].data();
+        } else if(snap.size > 1){
+          showToast(t('toastMultipleMatches'));
+          btn.disabled = false;
+          return;
+        }
+      }
+      if(!data){
         showToast(t('toastNoPreviousResponse'));
       } else {
-        var data = doc.data();
         selection = new Set(data.slots||[]);
         pendingEditName = data.name || name;
         pendingEditAffiliation = data.affiliation || affiliation;
