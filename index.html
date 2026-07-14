@@ -369,6 +369,9 @@
       </div>
       <div class="card">
         <h3 id="hubListHeading"></h3>
+        <div class="btn-row" style="margin-bottom:14px;">
+          <button class="btn btn-secondary btn-sm" id="exportAllBtn"></button>
+        </div>
         <div id="sessionList"></div>
       </div>
     </div>
@@ -472,6 +475,11 @@
             <span id="activeDateCount" style="font-size:13px;color:var(--muted);align-self:center;"></span>
           </div>
         </div>
+        <div class="card">
+          <h3 id="exportHeading"></h3>
+          <p class="desc" id="exportDesc"></p>
+          <button class="btn btn-secondary btn-sm" id="exportSessionBtn"></button>
+        </div>
         <div class="card danger-zone">
           <h3 id="dangerHeading"></h3>
           <p class="desc" id="dangerDesc"></p>
@@ -527,7 +535,7 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var BUILD_ID = '2026-07-08-v11';
+  var BUILD_ID = '2026-07-08-v12';
 
   // ---------------- i18n ----------------
   var TEXT = {
@@ -539,6 +547,13 @@
       titleEnPlaceholder:"Session name (English)",
       createBtn:"세션 생성",
       hubListHeading:"세션 목록",
+      exportAllBtn:"전체 세션 응답 CSV로 내보내기",
+      exportHeading:"응답 내보내기",
+      exportDesc:"이 세션에 제출된 모든 응답(이름, 소속, 가능 시간)을 CSV 파일로 다운로드합니다. 결과보고 등에 활용하세요.",
+      exportSessionBtn:"이 세션 CSV로 다운로드",
+      toastExporting:"내보내는 중입니다...",
+      toastExportDone:"CSV 파일이 다운로드되었습니다.",
+      toastExportEmpty:"내보낼 응답이 없습니다.",
       noSessions:"아직 생성된 세션이 없어요. 위에서 첫 세션을 만들어보세요.",
       openBtn:"열기",
       copyBtn:"복사",
@@ -631,6 +646,13 @@
       titleEnPlaceholder:"Session name (English)",
       createBtn:"Create Session",
       hubListHeading:"Session List",
+      exportAllBtn:"Export All Sessions' Responses (CSV)",
+      exportHeading:"Export Responses",
+      exportDesc:"Download all responses submitted for this session (name, affiliation, available times) as a CSV file. Useful for compiling results.",
+      exportSessionBtn:"Download This Session (CSV)",
+      toastExporting:"Exporting...",
+      toastExportDone:"CSV file downloaded.",
+      toastExportEmpty:"No responses to export.",
       noSessions:"No sessions yet. Create your first one above.",
       openBtn:"Open",
       copyBtn:"Copy",
@@ -802,6 +824,7 @@
     document.getElementById('titleEnInput').placeholder = t('titleEnPlaceholder');
     document.getElementById('createSessionBtn').textContent = t('createBtn');
     document.getElementById('hubListHeading').textContent = t('hubListHeading');
+    document.getElementById('exportAllBtn').textContent = t('exportAllBtn');
     document.getElementById('backLink').textContent = t('backToHub');
     document.getElementById('backLink').href = buildUrl({session:null});
     document.getElementById('infoOnline').textContent = t('infoOnline');
@@ -852,6 +875,9 @@
     document.getElementById('dangerHeading').textContent = t('dangerHeading');
     document.getElementById('dangerDesc').textContent = t('dangerDesc');
     document.getElementById('resetAllBtn').textContent = t('resetAllBtn');
+    document.getElementById('exportHeading').textContent = t('exportHeading');
+    document.getElementById('exportDesc').textContent = t('exportDesc');
+    document.getElementById('exportSessionBtn').textContent = t('exportSessionBtn');
     document.getElementById('sessionNotFound').innerHTML = '<div class="big">🔍</div>'+t('sessionNotFound');
     document.getElementById('footNote').innerHTML = t('footNote') + '<br><span style="opacity:0.5;font-size:11px;">Build '+BUILD_ID+'</span>';
   }
@@ -1076,6 +1102,49 @@
     });
   }
 
+  function csvEscape(v){
+    var s = (v===null||v===undefined) ? '' : String(v);
+    if(/[",\n\r]/.test(s)){ s = '"'+s.replace(/"/g,'""')+'"'; }
+    return s;
+  }
+  function slotsToReadable(slots){
+    return (slots||[]).slice().sort().map(function(k){
+      var parts = k.split('_');
+      return parts[0]+' '+parts[1]+':00-'+pad((+parts[1])+1)+':00';
+    }).join('; ');
+  }
+  function downloadCSV(filename, rows){
+    var csv = rows.map(function(r){ return r.map(csvEscape).join(','); }).join('\r\n');
+    var blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  document.getElementById('exportAllBtn').addEventListener('click', async function(){
+    var btn = this; btn.disabled = true;
+    showToast(t('toastExporting'));
+    try{
+      var rows = [['Session ID','Session Title (KO)','Session Title (EN)','Respondent Name','Affiliation','Available Times (KST)','Submitted At']];
+      for(var i=0;i<sessionsIndex.length;i++){
+        var s = sessionsIndex[i];
+        var responses = await fetchResponses(s.id);
+        responses.forEach(function(r){
+          rows.push([s.id, s.titleKo||'', s.titleEn||'', r.name||'', r.affiliation||'', slotsToReadable(r.slots), r.submittedAt||'']);
+        });
+      }
+      if(rows.length===1){ showToast(t('toastExportEmpty')); btn.disabled=false; return; }
+      downloadCSV('all_sessions_responses_'+toISO(new Date())+'.csv', rows);
+      showToast(t('toastExportDone'));
+    }catch(e){
+      showToast(t('toastLoadFail'));
+    }
+    btn.disabled = false;
+  });
+
   document.getElementById('createSessionBtn').addEventListener('click', async function(){
     var ko = document.getElementById('titleKoInput').value.trim();
     var en = document.getElementById('titleEnInput').value.trim();
@@ -1193,6 +1262,24 @@
   });
   document.getElementById('copyAdminLinkBtn').addEventListener('click', function(){
     copyText(fullLinkAdmin(sessionId));
+  });
+  document.getElementById('exportSessionBtn').addEventListener('click', async function(){
+    var btn = this; btn.disabled = true;
+    showToast(t('toastExporting'));
+    try{
+      var responses = await fetchResponses(sessionId);
+      if(responses.length===0){ showToast(t('toastExportEmpty')); btn.disabled=false; return; }
+      var titleForFile = (currentSessionMeta && (currentSessionMeta.titleEn || currentSessionMeta.titleKo)) || sessionId;
+      var rows = [['Respondent Name','Affiliation','Available Times (KST)','Submitted At']];
+      responses.forEach(function(r){
+        rows.push([r.name||'', r.affiliation||'', slotsToReadable(r.slots), r.submittedAt||'']);
+      });
+      downloadCSV(titleForFile.replace(/[^a-zA-Z0-9_\-]+/g,'_')+'_responses.csv', rows);
+      showToast(t('toastExportDone'));
+    }catch(e){
+      showToast(t('toastLoadFail'));
+    }
+    btn.disabled = false;
   });
 
   document.getElementById('renameSaveBtn').addEventListener('click', async function(){
